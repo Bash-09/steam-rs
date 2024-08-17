@@ -1,13 +1,13 @@
 macro_rules! do_http {
     ($url:ident, $output_type:ty, $error_handle:ident, $error:expr) => {
-        if let Ok(response) = minreq::get($url).send() {
-            match response.status_code {
-                200 => {$error_handle!(response.json::<$output_type>(), $error)}
-                404 => {$error_handle!(response.json::<$output_type>(), $error)}
+        if let Ok(response) = reqwest::get($url).await {
+            match response.status() {
+                reqwest::StatusCode::OK => {$error_handle!(response.json::<$output_type>().await, $error)}
+                reqwest::StatusCode::NOT_FOUND => {$error_handle!(response.json::<$output_type>().await, $error)}
                 _ => {
                     return Err($error(format!(
                         "Expected 200 Status, got {}",
-                        response.status_code
+                        response.status()
                     )));
                 }
             }
@@ -18,21 +18,23 @@ macro_rules! do_http {
     };
 
     // Post Support
-    ($url:ident, $output_type:ty, $error_handle:ident, $error:expr, $body:ident) => {
-        if let Ok(response) = minreq::post($url)
-            .with_header("content-type", "application/x-www-form-urlencoded")
-            .with_body($body)
+    ($url:ident, $output_type:ty, $error_handle:ident, $error:expr, $json_data:ident) => {
+        if let Ok(response) = reqwest::Client::new()
+            .post($url)
+            .header("Content-Type", "application/json")
+            .body($json_data.to_owned())
             .send()
+            .await
         {
-            match response.status_code {
-                200 => {
-                    $error_handle!(response.json::<$output_type>(), $error)
+            match response.status() {
+                reqwest::StatusCode::OK => {
+                    $error_handle!(response.json::<$output_type>().await, $error)
                 }
 
                 _ => {
                     return Err($error(format!(
                         "Expected 200 Status, got {}",
-                        response.status_code
+                        response.status()
                     )));
                 }
             }
@@ -44,18 +46,20 @@ macro_rules! do_http {
 
     // Post support with debugging
     ($url:ident, $output_type:ty, $error_handle:ident, $error:expr, $json_data:ident, $debug:literal) => {
-        if let Ok(response) = minreq::post($url)
-            .with_header("Content-Type", "application/json")
-            .with_body($json_data.to_owned())
+        if let Ok(response) = reqwest::Client::new()
+            .post($url)
+            .header("Content-Type", "application/json")
+            .body($json_data.to_owned())
             .send()
+            .await
         {
-            match response.status_code {
-                200 => $error_handle!(response.text().await, $error),
+            match response.status() {
+                reqwest::StatusCode::OK => $error_handle!(response.text().await, $error),
 
                 _ => {
                     return Err($error(format!(
                         "Expected 200 Status, got {}",
-                        response.status_code
+                        response.status()
                     )));
                 }
             }
@@ -66,28 +70,31 @@ macro_rules! do_http {
     };
 
     ($url:ident, $output_type:ty) => {
-        minreq::get($url)
-            .send()?
-            .json::<$output_type>()?
+        reqwest::get($url)
+            .await
+            .unwrap()
+            .json::<$output_type>()
+            .await
+            .unwrap()
     };
 
     ($url:ident, $error_handle:ident, $error:expr) => {
         $error_handle!(
-            $error_handle!(minreq::get($url).send()?, $error).json()?,
+            $error_handle!(reqwest::get($url).await, $error)
+                .json()
+                .await,
             $error
         )
     };
     ($url:ident, $error:expr) => {
         use crate::errors::ErrorHandle;
         ErrorHandle!(
-            ErrorHandle!(minreq::get($url).send()?, $error).json().await,
+            ErrorHandle!(reqwest::get($url).await, $error).json().await,
             $error
         )
     };
     ($url:ident) => {
-        minreq::get($url)
-            .send()?
-            .as_str()?
+        reqwest::get($url).await.unwrap().text().await.unwrap()
     };
 }
 
