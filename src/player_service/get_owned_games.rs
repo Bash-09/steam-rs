@@ -19,7 +19,8 @@ struct Wrapper {
     response: OwnedGames,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(default)]
 pub struct OwnedGames {
     pub game_count: u64,
     pub games: Vec<Game>,
@@ -28,13 +29,12 @@ pub struct OwnedGames {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Game {
     pub appid: u32,
-    pub name: String,
+    pub name: Option<String>,
+    pub playtime_2weeks: Option<u64>,
     pub playtime_forever: u64,
-    pub img_icon_url: String,
+    pub img_icon_url: Option<String>,
+    pub img_logo_url: Option<String>,
     pub capsule_filename: Option<String>,
-    pub has_workshop: bool,
-    pub has_market: bool,
-    pub has_dlc: bool,
 }
 
 impl Steam {
@@ -56,24 +56,31 @@ impl Steam {
         steamid: SteamId,
         include_appinfo: bool,
         include_played_free_games: bool,
-        appids_filter: u32, // TODO: should this be an option?
-        include_free_sub: bool,
-        skip_unvetted_apps: Option<bool>,
-        language: &str,
+        appids_filter: Vec<u32>,
         include_extended_appinfo: bool,
     ) -> Result<OwnedGames, PlayerServiceError> {
         let key = &self.api_key.clone();
         let steamid = steamid.into_u64();
-        let args = gen_args!(
+        let mut args = gen_args!(
             key,
             steamid,
             include_appinfo,
             include_played_free_games,
-            appids_filter,
-            include_free_sub,
-            language,
             include_extended_appinfo
-        ) + &optional_argument!(skip_unvetted_apps);
+        );
+
+        if !appids_filter.is_empty() {
+            let mut appids_filter_arg = serde_json::Map::new();
+            appids_filter_arg.insert(
+                "appids_filter".to_string(),
+                serde_json::to_value(appids_filter).unwrap(),
+            );
+            args.push_str(&format!(
+                "&{}",
+                serde_json::to_string(&appids_filter_arg).unwrap()
+            ));
+        }
+
         let url = format!("{BASE}/{INTERFACE}/{ENDPOINT}/v{VERSION}/?{args}");
         let wrapper = do_http!(url, Wrapper, ErrorHandle, PlayerServiceError::GetOwnedGames);
         Ok(wrapper.response)
